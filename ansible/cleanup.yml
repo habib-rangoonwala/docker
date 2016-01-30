@@ -1,0 +1,39 @@
+---
+########################################################
+# Author: Habib Rangoonwala
+# Created: 09-Jan-2016
+# Updated: 29-Jan-2016
+# Howto:
+# ansible-playbook "cleanup.yml" -i "hostsfile.txt" -u centos --extra-vars "instance=dev1 mscount=2 cleanup=false" -vvvv  -k
+#########################################################
+- name: Clean-up Weblogic Cluster
+  hosts: weblogic
+#  become: yes
+  vars:
+    instancename: "{{ instance|upper }}"
+    managedservercount: "{{ mscount|default(1) }}"
+    fscleanup: "{{ cleanup|default(false) }}"
+    app_root: /app/docker/data
+  tasks:
+    - name: Remove Managed Servers 
+      with_sequence: start=27016 count={{ managedservercount }}
+      docker:
+        image: habib-rangoonwala/weblogic
+        name: wls{{ instancename }}{{ item }}
+        insecure_registry: yes
+        state: absent
+    - name: Clean-up AdminServer
+      docker:
+        image: habib-rangoonwala/weblogic
+        name: wlsadmin{{ instancename }}
+        insecure_registry: yes
+        state: absent
+    - name: Clean-up Apache
+      docker:
+        image: habib-rangoonwala/apachewls
+        name: apachewls_{{ instancename }}
+        insecure_registry: yes
+        state: absent
+    - name: Clean-up Persistent Directories/store
+      file: path={{ app_root }}/{{ instancename }}/ state=absent owner=centos
+      when: fscleanup == "true"

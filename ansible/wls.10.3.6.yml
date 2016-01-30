@@ -1,0 +1,53 @@
+---
+##########################################################
+# Author: Habib Rangoonwala
+# Created: 21-Jan-2016
+# Updated: 29-Jan-2016
+# Usage: 
+# ansible-playbook "wls.10.3.6.yml" -i "hostsfile.txt" -u centos --extra-vars "instance=dev1 mscount=2" -vvvv  -k
+############################################################
+- name: weblogic cluster setup
+  hosts: weblogic
+  vars:
+    instancename: "{{ instance|upper }}"
+    managedservercount: "{{ mscount|default(1) }}"
+    app_root: /apps/docker/data
+  tasks:
+    - name: Create AdminServer Directory
+      file: path={{ app_root }}/{{ instancename }}/wls state=directory owner=centos mode=0775
+    - name: Start Base Image and Create a DOMAIN
+      docker:
+#        image: habib/weblogic:12.2.1.shareddomain
+        image: kanti/weblogic:10.3.6-domain
+        name: wlsadmin{{ instancename }}
+        hostname: wlsadmin{{ instancename }}
+        insecure_registry: yes
+        detach: yes
+        command: sh -x createDomain.sh {{ instancename }}
+        ports:
+          - "27045:7001"
+        volumes:
+          - "{{ app_root }}/{{ instancename }}/wls:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+        state: started
+    - wait_for: path={{ app_root }}/{{ instancename }}/wls/{{ instancename }}_DOMAIN.jar delay=5
+    - wait_for: port=27045 delay=20 timeout=120
+    - name: Add Managed Servers
+      with_sequence: count={{ managedservercount }}
+      docker:
+        image: kanti/weblogic:10.3.6-domain
+        name: wls{{ instancename }}{{ item }}
+        hostname: wls{{ instancename }}{{ item }}
+        insecure_registry: yes
+        detach: yes
+        command: sh -x createServer.sh {{ instancename }}
+        links:
+        - wlsadmin{{ instancename }}:wlsadmin{{ instancename }}
+        expose:
+        - 27016+{{ item }}
+        - 5556
+        ports:
+        - 7001
+        - 5556
+        volumes:
+          - "{{ app_root }}/{{ instancename }}/wls:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+        state: started

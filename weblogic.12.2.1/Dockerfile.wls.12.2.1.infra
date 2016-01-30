@@ -1,0 +1,65 @@
+##########################################################################
+# Author: Habib Rangoonwala
+# Created: 09-Jan-2016
+# Updated: 28-Jan-2016
+# USAGE: 
+# Run:
+#   $ docker build -t habib-rangoonwala/weblogic:12.2.1-infra -f Dockerfile.wls.12.2.1.infra .
+#############################################################################
+
+FROM oraclelinux:7
+
+# Maintainer
+# ----------
+MAINTAINER Habib Rangoonwala
+
+# Environment variables for the build
+# ----------------------------------------------------
+ENV JAVA_RPM=jdk-8u65-linux-x64.rpm \
+    FMW_PKG=fmw_12.2.1.0.0_wls_quick_Disk1_1of1.zip \
+    FMW_JAR=fmw_12.2.1.0.0_wls_quick.jar \
+    JAVA_HOME=/usr/java/default \
+    CONFIG_JVM_ARGS="-Djava.security.egd=file:/dev/./urandom" \
+    _JAVA_OPTIONS="-XX:+PrintCommandLineFlags -Djava.security.egd=file:/dev/./urandom" \
+    JAVA_OPTIONS=$_JAVA_OPTIONS \
+    ADMIN_PASSWORD="welcome1" \
+    ADMIN_PORT=8001 \
+    NM_PORT=5556 \
+    MS_PORT=7001 \
+    PAAS_ROOT=/paas \
+    PAAS_COMPONENT=wls \
+    CLUSTER_NAME="DEFAULT_CLUSTER" 
+ENV PAAS_HOME=${PAAS_ROOT}/${PAAS_COMPONENT}/
+ENV ORACLE_HOME=${PAAS_HOME} \
+    PATH=$PATH:${PAAS_HOME}/oracle_common/common/bin:${PAAS_HOME}/wlserver/common/bin:${PAAS_HOME}/user_projects/domains/base_domain/bin:${PAAS_HOME}/ 
+
+# Copy Oracle packages for installation
+# ---------------------------------------
+COPY $FMW_PKG $JAVA_RPM install.file oraInst.loc ${PAAS_HOME}/
+
+# Setup filesystem and oracle user
+# Install and configure Oracle JDK
+# Adjust file permissions, go to ${PAAS_HOME} as user 'oracle' to proceed with WLS installation
+# ------------------------------------------------------------
+RUN rpm -i ${PAAS_HOME}/$JAVA_RPM && \
+    yum install -y unzip && \
+    chmod a+xr ${PAAS_HOME} && \
+    useradd -b ${PAAS_HOME} -m -s /bin/bash oracle && \
+    echo oracle:oracle | chpasswd && \
+    echo ". ${PAAS_HOME}/wls.env" >> ${PAAS_HOME}/.bashrc && \
+    unzip ${PAAS_HOME}/$FMW_PKG -d ${PAAS_HOME} && \
+    chown oracle:oracle -R ${PAAS_HOME} && \
+    sed -i 's@PAAS_HOME@'$PAAS_HOME'@g' ${PAAS_HOME}/oraInst.loc && \
+    sed -i 's@PAAS_HOME@'$PAAS_HOME'@g' ${PAAS_HOME}/install.file && \
+    su -c "java -jar ${PAAS_HOME}/$FMW_JAR -invPtrLoc ${PAAS_HOME}/oraInst.loc -jreLoc $JAVA_HOME -ignoreSysPrereqs -force ORACLE_HOME=$ORACLE_HOME" - oracle && \
+    rm ${PAAS_HOME}/$FMW_JAR ${PAAS_HOME}/$FMW_PKG ${PAAS_HOME}/$JAVA_RPM ${PAAS_HOME}/oraInst.loc ${PAAS_HOME}/install.file && \
+    yum -y remove unzip && rm -rf /var/cache/yum/*
+
+# Expose Node Manager default port, and also default http/https ports for admin console
+EXPOSE $NM_PORT $ADMIN_PORT $MS_PORT
+
+# Final setup
+WORKDIR ${PAAS_HOME}
+
+# Define default command to start container
+CMD ["bash"]

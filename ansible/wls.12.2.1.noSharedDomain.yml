@@ -1,0 +1,65 @@
+---
+#################################################################
+# Author: Habib Rangoonwala
+# Created: 09-Jan-2016
+# Updated: 29-Jan-2016
+# Usage: 
+# ansible-playbook "wls.12.2.1.noSharedDomain.yml" -i "$HOME/hostsfile.txt" -u centos --extra-vars "instance=dev1 mscount=2" -vvvv  -k
+#################################################################
+- name: Setup Weblogic Cluster
+  hosts: weblogic
+#  sudo: yes
+  vars:
+    instancename: "{{ instance|upper }}"
+    managedservercount: "{{ mscount|default(1) }}"
+    proccount: "{{ processcount|default(1) }}"
+    app_root: /apps/docker/data
+  tasks:
+    - name: Create AdminServer Directory
+      file: path={{ app_root }}/{{ instancename }}/wls/0 state=directory owner=centos mode=0775
+    - name: Start Base Image and Create a DOMAIN
+      docker:
+       image: habib-rangoonwala/weblogic:12.2.1-cs
+       name: wlsadmin{{ instancename }}
+       hostname: wlsadmin{{ instancename }}        
+       insecure_registry: yes
+       detach: yes
+       command: sh -x createDomain.sh {{ instancename }}
+       ports:
+          - "27025:8001"
+       volumes:
+          - "{{ app_root }}/{{ instancename }}/wls/0:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+       state: started
+    - name: Create Managed Server Specific Directories for unpack.sh
+      file: path={{ app_root }}/{{ instancename }}/wls/{{ item }} state=directory owner=centos mode=0775
+      with_sequence: start=27016 count={{ managedservercount }}
+    - wait_for: port=27025 delay=2 timeout=120
+    - wait_for: path={{ app_root }}/{{ instancename }}/wls/0/{{ instancename }}_DOMAIN.jar delay=1
+    - name: Copy packed domain to all managed server locations
+      copy: src={{ app_root }}/{{ instancename }}/wls/0/{{ instancename }}_DOMAIN.jar dest={{ app_root }}/{{ instancename }}/wls/{{ item }}/{{ instancename }}_DOMAIN.jar owner=centos mode=0775 remote_src=true
+      with_sequence: start=27016 count={{ managedservercount }}
+    - name: Add Managed Servers
+      with_sequence: start=27016 count={{ managedservercount }}
+      docker:
+        image: habib-rangoonwala/weblogic:12.2.1-cs
+        name: wls{{ instancename }}{{ item }}
+        hostname: wls{{ instancename }}{{ item }}
+        insecure_registry: yes
+        detach: yes
+        command: sh -x createServer.sh {{ instancename }}
+        links:
+        - wlsadmin{{ instancename }}:wlsadmin{{ instancename }}
+        ports:
+          - "{{item }}:7001"
+#        expose:
+#        - {{ item }}
+#        - 5556
+#        ports:
+#        - 7001
+#        - 5556
+        volumes:
+          - "{{ app_root }}/{{ instancename }}/wls/{{ item }}:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+        state: started
+    - include: httpd.yml instance={{ instancename }}
+#      var:
+#         instancename: {{ instancename }}

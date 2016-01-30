@@ -1,0 +1,55 @@
+---
+######################################################################
+# Author: Habib Rangoonwala
+# Created: 09-Jan-2016
+# Updated: 29-Jan-2016
+# Usage: 
+# ansible-playbook "wls.12.2.1.SharedDomain.yml" -i "$HOME/hostsfile.txt" -u centos --extra-vars "instance=dev1 mscount=2" -vvvv  -k
+######################################################################
+- name: weblogic cluster setup
+  hosts: weblogic
+  vars:
+    instancename: "{{ instance|upper }}"
+    managedservercount: "{{ mscount|default(1) }}"
+    app_root: /app/docker/data
+  tasks:
+    - name: Create AdminServer Directory
+      file: path={{ app_root }}/{{ instancename }}/wls state=directory owner=centos mode=0775
+    - name: Start Base Image and Create a DOMAIN
+      docker:
+        image: habib-rangoonwala/weblogic:12.2.1-cs-SharedDomain
+        name: wlsadmin{{ instancename }}
+        hostname: wlsadmin{{ instancename }}
+        insecure_registry: yes
+        detach: yes
+        command: sh -x createDomain.sh {{ instancename }}
+        ports:
+          - "27025:8001"
+        volumes:
+          - "{{ app_root }}/{{ instancename }}/wls:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+        state: started
+    - pause: seconds=60 prompt="Waiting for AdminServer to start"
+#    - lineinfile: dest={{ app_root }}/{{ instancename }}/wls/nodemanager/nodemanager.properties line="DomainsDirRemoteSharingEnabled=true" state=present remote_src=true
+    - name: Add Managed Servers
+      with_sequence: count={{ managedservercount }}
+      docker:
+        image: habib-rangoonwala/weblogic:12.2.1-cs-SharedDomain
+        name: wls{{ instancename }}{{ item }}
+        hostname: wls{{ instancename }}{{ item }}
+        insecure_registry: yes
+        detach: yes
+        command: sh -x createServer.sh {{ instancename }}
+        links:
+        - wlsadmin{{ instancename }}:wlsadmin{{ instancename }}
+#        ports:
+#          - int(27016+ {{item }})":8001"
+        expose:
+        - 27016+{{ item }}
+        - 5556
+        ports:
+        - 7001
+        - 5556
+        volumes:
+          - "{{ app_root }}/{{ instancename }}/wls:/paas/wls/user_projects/domains/{{ instancename }}_DOMAIN"
+        state: started
+        

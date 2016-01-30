@@ -1,0 +1,4 @@
+*.so
+*.zip
+.DS_Store
+weblogic.10.3.6/*

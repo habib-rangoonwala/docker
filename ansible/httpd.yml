@@ -1,0 +1,43 @@
+---
+# Author: Habib Rangoonwala
+# Created: 21-Jan-2016
+# Updated: 29-Jan-2016
+# Howto: 
+# this is an include file and must be called from main playbook
+##########
+#- name: Setup Reverse Proxy Server
+#  sudo: yes
+#  tasks:
+    - name: Create Apache htdocs,conf,logs directory
+      file: path={{ app_root}}/{{ instancename }}/apache/{{ item }} state=directory owner=centos mode=0775
+      with_items: 
+       - htdocs
+       - conf
+       - logs
+    - name: Copy CONF Directory
+      copy: src=/apps/docker/habib/apache/conf/{{ item }}  dest={{ app_root }}/{{ instancename }}/apache/conf owner=centos mode=0775 remote_src=true
+      with_items: 
+       - httpd.conf
+       - mod_wl.conf
+       - maintenance.conf
+       - magic
+       - mime.types
+    - name: Update mod_wl.conf
+      lineinfile: dest={{ app_root }}/{{ instancename }}/apache/conf/mod_wl.conf regexp="WeblogicCluster " line="WeblogicCluster wls{{ instancename }}27016:7001" state=present
+    - name: Start Apache
+      docker:
+       image: habib-rangoonwala/apachewls:2.4.18-cs
+       name: apachewls_{{ instancename }}
+       hostname: apachewls_{{ instancename }}        
+       insecure_registry: yes
+       detach: yes
+       command: container-apachectl.sh
+       links:
+       - wls{{ instancename }}27016:wls{{ instancename }}27016
+       ports:
+          - "27015:80"
+       volumes:
+          - "{{ app_root}}/{{ instancename }}/apache/conf:/usr/local/apache2/conf"
+          - "{{ app_root}}/{{ instancename }}/apache/logs:/usr/local/apache2/logs"
+          - "{{ app_root}}/{{ instancename }}/apache/htdocs:/usr/local/apache2/htdocs"
+       state: running
