@@ -1,6 +1,6 @@
 ** Weblogic Docker Container **
 
-Following versions are supported
+Build Docker Image for following versions
 ```
 1 Weblogic 10.3.6
 2 Weblogic 12.2.1
